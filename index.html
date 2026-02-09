@@ -331,13 +331,23 @@
                 return null;
             }
             
-            createTile(r, c, value, isNew = false) {
+            createTile(r, c, value, isNew = false, noTransition = false) {
                 const tile = document.createElement('div');
                 tile.className = 'tile' + (isNew ? ' new' : '');
                 tile.textContent = value;
                 tile.setAttribute('data-value', value);
-                this.updateTilePosition(tile, r, c);
+                if (noTransition) {
+                    tile.style.transition = 'none';
+                }
+                const x = c * (this.tileSize + this.gap);
+                const y = r * (this.tileSize + this.gap);
+                tile.style.transform = `translate(${x}px, ${y}px)`;
                 this.tileContainer.appendChild(tile);
+                if (noTransition) {
+                    // Force reflow then restore transition
+                    tile.offsetHeight;
+                    tile.style.transition = '';
+                }
                 return tile;
             }
             
@@ -355,7 +365,7 @@
                     for (let c = 0; c < 4; c++) {
                         const value = this.grid[r][c];
                         if (value !== 0) {
-                            const tile = this.createTile(r, c, value);
+                            const tile = this.createTile(r, c, value, false, true);
                             this.tiles.set(`${r},${c}`, tile);
                         }
                     }
