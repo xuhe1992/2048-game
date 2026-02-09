@@ -189,6 +189,80 @@
             margin-bottom: 20px;
         }
         
+        .game-win {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(237, 194, 46, 0.85);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            border-radius: 10px;
+            z-index: 100;
+            animation: winFadeIn 0.5s ease-out;
+        }
+        
+        .game-win.show {
+            display: flex;
+        }
+        
+        .game-win h2 {
+            color: #f9f6f2;
+            font-size: 48px;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            animation: winBounce 0.6s ease-out;
+        }
+        
+        .game-win p {
+            color: #f9f6f2;
+            font-size: 18px;
+            margin-bottom: 20px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+        
+        .win-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .win-buttons button {
+            background: #f9f6f2;
+            color: #776e65;
+            font-size: 16px;
+            padding: 10px 20px;
+        }
+        
+        .win-buttons button:hover {
+            background: #efe5d5;
+        }
+        
+        @keyframes winFadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+        
+        @keyframes winBounce {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.1); }
+            70% { transform: scale(0.95); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        #fireworks {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 9999;
+            display: none;
+        }
+        
         @media (max-width: 500px) {
             .grid-container {
                 grid-template-columns: repeat(4, 75px);
@@ -239,7 +313,16 @@
             <h2>游戏结束!</h2>
             <button onclick="game.restart()">再来一局</button>
         </div>
+        <div class="game-win" id="gameWin">
+            <h2>恭喜过关!</h2>
+            <p>你成功合成了 2048!</p>
+            <div class="win-buttons">
+                <button onclick="game.continueGame()">继续挑战</button>
+                <button onclick="game.restart()">重新开始</button>
+            </div>
+        </div>
     </div>
+    <canvas id="fireworks"></canvas>
     
     <div class="instructions">
         <p><strong>玩法：</strong>使用方向键或滑动来移动方块</p>
@@ -259,6 +342,10 @@
                 this.scoreElement = document.getElementById('score');
                 this.bestElement = document.getElementById('best');
                 this.gameOverElement = document.getElementById('gameOver');
+                this.gameWinElement = document.getElementById('gameWin');
+                this.fireworksCanvas = document.getElementById('fireworks');
+                this.fireworksCtx = this.fireworksCanvas.getContext('2d');
+                this.won = false;
                 this.tileSize = window.innerWidth <= 500 ? 75 : 100;
                 this.gap = window.innerWidth <= 500 ? 8 : 10;
                 this.tiles = new Map();
@@ -278,6 +365,7 @@
             init() {
                 this.grid = Array(4).fill(null).map(() => Array(4).fill(0));
                 this.score = 0;
+                this.won = false;
                 this.tiles.clear();
                 this.tileContainer.innerHTML = '';
                 this.updateScore();
@@ -300,6 +388,8 @@
             
             restart() {
                 this.gameOverElement.classList.remove('show');
+                this.gameWinElement.classList.remove('show');
+                this.stopFireworks();
                 this.init();
             }
             
@@ -386,6 +476,7 @@
                 this.saveState();
                 const oldGrid = this.grid.map(row => [...row]);
                 let moved = false;
+                let merged = false;
                 
                 if (direction === 'left' || direction === 'right') {
                     for (let r = 0; r < 4; r++) {
@@ -394,10 +485,11 @@
                         
                         const result = this.merge(row);
                         if (result.moved) moved = true;
+                        if (result.merged) merged = true;
                         
                         if (direction === 'right') result.row.reverse();
                         this.grid[r] = result.row;
-                        this.score += result.score;
+                        if (result.merged) this.score += result.score;
                     }
                 } else {
                     for (let c = 0; c < 4; c++) {
@@ -409,12 +501,13 @@
                         
                         const result = this.merge(col);
                         if (result.moved) moved = true;
+                        if (result.merged) merged = true;
                         
                         if (direction === 'down') result.row.reverse();
                         for (let r = 0; r < 4; r++) {
                             this.grid[r][c] = result.row[r];
                         }
-                        this.score += result.score;
+                        if (result.merged) this.score += result.score;
                     }
                 }
                 
@@ -422,11 +515,15 @@
                     this.animateMove(oldGrid, this.grid);
                     
                     setTimeout(() => {
-                        const newTile = this.addRandomTile();
-                        this.render();
-                        if (newTile) {
-                            const tile = this.tiles.get(`${newTile.r},${newTile.c}`);
-                            if (tile) tile.classList.add('new');
+                        if (merged) {
+                            const newTile = this.addRandomTile();
+                            this.render();
+                            if (newTile) {
+                                const tile = this.tiles.get(`${newTile.r},${newTile.c}`);
+                                if (tile) tile.classList.add('new');
+                            }
+                        } else {
+                            this.render();
                         }
                         this.updateScore();
                         
@@ -436,7 +533,10 @@
                             this.updateScore();
                         }
                         
-                        if (this.isGameOver()) {
+                        if (!this.won && this.hasWon()) {
+                            this.won = true;
+                            this.showWinScreen();
+                        } else if (this.isGameOver()) {
                             this.gameOverElement.classList.add('show');
                         }
                     }, 150);
@@ -477,6 +577,7 @@
             merge(row) {
                 let newRow = row.filter(x => x !== 0);
                 let score = 0;
+                let merged = false;
                 let moved = newRow.length !== row.length;
                 
                 for (let i = 0; i < newRow.length - 1; i++) {
@@ -485,6 +586,7 @@
                         score += newRow[i];
                         newRow.splice(i + 1, 1);
                         moved = true;
+                        merged = true;
                     }
                 }
                 
@@ -492,7 +594,131 @@
                     newRow.push(0);
                 }
                 
-                return { row: newRow, score, moved };
+                return { row: newRow, score, moved, merged };
+            }
+            
+            hasWon() {
+                for (let r = 0; r < 4; r++) {
+                    for (let c = 0; c < 4; c++) {
+                        if (this.grid[r][c] === 2048) return true;
+                    }
+                }
+                return false;
+            }
+            
+            showWinScreen() {
+                this.gameWinElement.classList.add('show');
+                this.startFireworks();
+            }
+            
+            continueGame() {
+                this.gameWinElement.classList.remove('show');
+                this.stopFireworks();
+            }
+            
+            startFireworks() {
+                const canvas = this.fireworksCanvas;
+                const ctx = this.fireworksCtx;
+                canvas.style.display = 'block';
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                
+                this.fireworksParticles = [];
+                this.fireworksRunning = true;
+                
+                const colors = [
+                    '#ff4757', '#ff6b81', '#ffa502', '#ffda79',
+                    '#2ed573', '#7bed9f', '#1e90ff', '#70a1ff',
+                    '#a855f7', '#c084fc', '#eccc68', '#f9ca24'
+                ];
+                
+                const createBurst = (x, y) => {
+                    const count = 30 + Math.floor(Math.random() * 20);
+                    const color = colors[Math.floor(Math.random() * colors.length)];
+                    for (let i = 0; i < count; i++) {
+                        const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.3;
+                        const speed = 2 + Math.random() * 4;
+                        this.fireworksParticles.push({
+                            x, y,
+                            vx: Math.cos(angle) * speed,
+                            vy: Math.sin(angle) * speed,
+                            life: 1,
+                            decay: 0.01 + Math.random() * 0.015,
+                            color,
+                            size: 2 + Math.random() * 3
+                        });
+                    }
+                };
+                
+                // Launch bursts periodically
+                const launchBurst = () => {
+                    if (!this.fireworksRunning) return;
+                    const x = canvas.width * 0.2 + Math.random() * canvas.width * 0.6;
+                    const y = canvas.height * 0.15 + Math.random() * canvas.height * 0.5;
+                    createBurst(x, y);
+                    this.fireworksLaunchTimer = setTimeout(launchBurst, 300 + Math.random() * 400);
+                };
+                
+                // Initial bursts
+                for (let i = 0; i < 5; i++) {
+                    setTimeout(() => {
+                        if (!this.fireworksRunning) return;
+                        const x = canvas.width * 0.15 + Math.random() * canvas.width * 0.7;
+                        const y = canvas.height * 0.1 + Math.random() * canvas.height * 0.5;
+                        createBurst(x, y);
+                    }, i * 150);
+                }
+                setTimeout(launchBurst, 800);
+                
+                const animate = () => {
+                    if (!this.fireworksRunning) {
+                        canvas.style.display = 'none';
+                        return;
+                    }
+                    
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    for (let i = this.fireworksParticles.length - 1; i >= 0; i--) {
+                        const p = this.fireworksParticles[i];
+                        p.x += p.vx;
+                        p.y += p.vy;
+                        p.vy += 0.05; // gravity
+                        p.vx *= 0.99; // drag
+                        p.life -= p.decay;
+                        
+                        if (p.life <= 0) {
+                            this.fireworksParticles.splice(i, 1);
+                            continue;
+                        }
+                        
+                        ctx.globalAlpha = p.life;
+                        ctx.fillStyle = p.color;
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Glow effect
+                        ctx.globalAlpha = p.life * 0.3;
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.size * p.life * 2.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    
+                    ctx.globalAlpha = 1;
+                    requestAnimationFrame(animate);
+                };
+                
+                requestAnimationFrame(animate);
+            }
+            
+            stopFireworks() {
+                this.fireworksRunning = false;
+                if (this.fireworksLaunchTimer) {
+                    clearTimeout(this.fireworksLaunchTimer);
+                    this.fireworksLaunchTimer = null;
+                }
+                this.fireworksParticles = [];
+                this.fireworksCanvas.style.display = 'none';
             }
             
             isGameOver() {
